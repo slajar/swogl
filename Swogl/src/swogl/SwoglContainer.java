@@ -46,6 +46,19 @@ import swogl.layout.SpaceLayout3D;
 public class SwoglContainer extends JComponent implements GLEventListener
 {
     /**
+     * Compile-time flag indicating whether a GLJPanel or a 
+     * GLCanvas should be used as the main GL component.
+     * 
+     * NOTE: Some Components currently do not work properly 
+     * when a GLCanvas is used. Namely:<br />
+     * - JSplitPane (setting divider location)<br />
+     * - JTree (expanding)<br />
+     * - JComboBoxes (the popup menu)
+     * - Probably other components, like JInternalFrames etc.
+     */
+    private static final boolean USE_GLJPANEL = true;
+    
+    /**
      * Enumeration of the different control modes for this SwoglContainer.
      */
     public enum ControlMode
@@ -84,7 +97,7 @@ public class SwoglContainer extends JComponent implements GLEventListener
     /**
      * The GL component that actually displays the SwoglComponents
      */
-    private GLJPanel glComponent;
+    private Component glComponent;
 
     /**
      * The LayoutManager3D that lays out the SwoglComponents in
@@ -116,6 +129,11 @@ public class SwoglContainer extends JComponent implements GLEventListener
     private JPanel containerPanel = new JPanel();
 
     /**
+     * The JScrollPane that holds the containerPanel
+     */
+    private JScrollPane containerScrollPane;
+    
+    /**
      * The light setup, maintaining the lights that are illuminating
      * the contents of this SwoglContainer
      */
@@ -135,21 +153,21 @@ public class SwoglContainer extends JComponent implements GLEventListener
         
         super.setLayout(new GridLayout(1,1));
 
-        glComponent = new GLJPanel()
-        /*// For debugging
+        if (USE_GLJPANEL)
         {
-            public String toString()
-            {
-                return "GLPanel for "+SwoglContainer.this;
-            }
+            GLJPanel glJPanel = new GLJPanel();
+            glJPanel.addGLEventListener(this);
+            glComponent = glJPanel; 
         }
-        //*/
-        ;
-        
-        glComponent.addGLEventListener(this);
+        else
+        {
+            GLCanvas glCanvas = new GLCanvas();
+            glCanvas.addGLEventListener(this);
+            glComponent = glCanvas; 
+        }
 
         containerPanel.setLayout(new BoxLayout(containerPanel, BoxLayout.X_AXIS));
-        final JScrollPane containerScrollPane = new JScrollPane(containerPanel);
+        containerScrollPane = new JScrollPane(containerPanel);
         
         final JLayeredPane layeredPane = new JLayeredPane();
         
@@ -236,7 +254,14 @@ public class SwoglContainer extends JComponent implements GLEventListener
      */
     void doDisplay()
     {
-        glComponent.display();
+        if (USE_GLJPANEL)
+        {
+            ((GLJPanel)glComponent).display();
+        }
+        else
+        {
+            ((GLCanvas)glComponent).display();
+        }
     }
     
     /**
@@ -386,6 +411,26 @@ public class SwoglContainer extends JComponent implements GLEventListener
                 faked.x = swoglComponentContainerLocation.x + inSwoglComponentContainer.x;
                 faked.y = swoglComponentContainerLocation.y + inSwoglComponentContainer.y;
                 mouseEvent.translatePoint(faked.x - real.x, faked.y - real.y);
+
+                if (!USE_GLJPANEL)
+                {
+                    // If a GLCanvas is used, the event has to be dispatched
+                    // to the hit component manually. 
+                    Component finalComponent = SwingUtilities.getDeepestComponentAt(
+                        containerScrollPane, mouseEvent.getX(), mouseEvent.getY());
+    
+                    Point finalComponentLocation = 
+                        SwingUtilities.convertPoint(containerScrollPane, 
+                            new Point(mouseEvent.getX(), mouseEvent.getY()), finalComponent);
+                    mouseEvent.translatePoint(
+                        finalComponentLocation.x - mouseEvent.getX(),
+                        finalComponentLocation.y - mouseEvent.getY());
+    
+                    mouseEvent.setSource(finalComponent);
+    
+                    //System.out.println("Dispatching "+mouseEvent);
+                    finalComponent.dispatchEvent(mouseEvent);
+                }
             }
         }
         else
